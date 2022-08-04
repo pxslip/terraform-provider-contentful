@@ -1,16 +1,19 @@
 package contentful
 
 import (
+	"context"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func resourceContentfulSpace() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceSpaceCreate,
-		Read:   resourceSpaceRead,
-		Update: resourceSpaceUpdate,
-		Delete: resourceSpaceDelete,
+		CreateContext: resourceSpaceCreate,
+		ReadContext:   resourceSpaceRead,
+		UpdateContext: resourceSpaceUpdate,
+		DeleteContext: resourceSpaceDelete,
 
 		Schema: map[string]*schema.Schema{
 			"version": {
@@ -31,7 +34,7 @@ func resourceContentfulSpace() *schema.Resource {
 	}
 }
 
-func resourceSpaceCreate(d *schema.ResourceData, m interface{}) (err error) {
+func resourceSpaceCreate(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 
 	space := &contentful.Space{
@@ -39,14 +42,22 @@ func resourceSpaceCreate(d *schema.ResourceData, m interface{}) (err error) {
 		DefaultLocale: d.Get("default_locale").(string),
 	}
 
-	err = client.Spaces.Upsert(space)
+	err := client.Spaces.Upsert(ctx, space)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	err = updateSpaceProperties(d, space)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	d.SetId(space.Sys.ID)
@@ -54,58 +65,92 @@ func resourceSpaceCreate(d *schema.ResourceData, m interface{}) (err error) {
 	return nil
 }
 
-func resourceSpaceRead(d *schema.ResourceData, m interface{}) error {
+func resourceSpaceRead(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Id()
 
-	_, err := client.Spaces.Get(spaceID)
+	_, err := client.Spaces.Get(ctx, spaceID)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		d.SetId("")
 		return nil
 	}
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
+	}
 
-	return err
+	return
 }
 
-func resourceSpaceUpdate(d *schema.ResourceData, m interface{}) (err error) {
+func resourceSpaceUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Id()
 	defer func() {
-		if err != nil {
+		if diags.HasError() {
 			d.Partial(true)
 		}
 	}()
 
-	space, err := client.Spaces.Get(spaceID)
+	space, err := client.Spaces.Get(ctx, spaceID)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	space.Name = d.Get("name").(string)
 
-	err = client.Spaces.Upsert(space)
+	err = client.Spaces.Upsert(ctx, space)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
-	return updateSpaceProperties(d, space)
+	err = updateSpaceProperties(d, space)
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
+	}
+	return
 }
 
-func resourceSpaceDelete(d *schema.ResourceData, m interface{}) (err error) {
+func resourceSpaceDelete(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Id()
 
-	space, err := client.Spaces.Get(spaceID)
+	space, err := client.Spaces.Get(ctx, spaceID)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
-	err = client.Spaces.Delete(space)
+	err = client.Spaces.Delete(ctx, space)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		return nil
 	}
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
+	}
 
-	return err
+	return
 }
 
 func updateSpaceProperties(d *schema.ResourceData, space *contentful.Space) error {

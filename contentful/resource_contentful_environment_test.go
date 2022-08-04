@@ -1,12 +1,13 @@
 package contentful
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func TestAccContentfulEnvironment_Basic(t *testing.T) {
@@ -60,7 +61,7 @@ func testAccCheckContentfulEnvironmentExists(n string, environment *contentful.E
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		contentfulEnvironment, err := client.Environments.Get(spaceID, rs.Primary.ID)
+		contentfulEnvironment, err := client.Environments.Get(context.Background(), spaceID, rs.Primary.ID)
 		if err != nil {
 			return err
 		}
@@ -99,7 +100,7 @@ func testAccContentfulEnvironmentDestroy(s *terraform.State) error {
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		_, err := client.Locales.Get(spaceID, localeID)
+		_, err := client.Locales.Get(context.Background(), spaceID, localeID)
 		if _, ok := err.(contentful.NotFoundError); ok {
 			return nil
 		}

@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func resourceContentfulContentType() *schema.Resource {
@@ -145,7 +145,7 @@ func resourceContentTypeCreate(ctx context.Context, d *schema.ResourceData, m in
 		}
 	}
 
-	env, err := client.Environments.Get(spaceID, envID)
+	env, err := client.Environments.Get(ctx, spaceID, envID)
 	if err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -206,7 +206,7 @@ func resourceContentTypeCreate(ctx context.Context, d *schema.ResourceData, m in
 		return
 	}
 
-	if err = upsertAndActivate(client, env, ct); err != nil {
+	if err = upsertAndActivate(ctx, client, env, ct); err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
 			Summary:  "Failed to upsert and active content_type.",
@@ -233,7 +233,7 @@ func resourceContentTypeRead(ctx context.Context, d *schema.ResourceData, m inte
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	envID := d.Get("env_id").(string)
-	env, err := client.Environments.Get(spaceID, envID)
+	env, err := client.Environments.Get(ctx, spaceID, envID)
 	if err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -242,7 +242,7 @@ func resourceContentTypeRead(ctx context.Context, d *schema.ResourceData, m inte
 		})
 		return
 	}
-	_, err = client.ContentTypes.Get(env, d.Id())
+	_, err = client.ContentTypes.Get(ctx, env, d.Id())
 	if err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -264,7 +264,7 @@ func resourceContentTypeUpdate(ctx context.Context, d *schema.ResourceData, m in
 		}
 	}()
 
-	env, err := client.Environments.Get(spaceID, envID)
+	env, err := client.Environments.Get(ctx, spaceID, envID)
 	if err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -274,7 +274,7 @@ func resourceContentTypeUpdate(ctx context.Context, d *schema.ResourceData, m in
 		return
 	}
 
-	ct, err := client.ContentTypes.Get(env, d.Id())
+	ct, err := client.ContentTypes.Get(ctx, env, d.Id())
 	if err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -300,7 +300,7 @@ func resourceContentTypeUpdate(ctx context.Context, d *schema.ResourceData, m in
 		// To remove a field from a content type 4 API calls need to be made.
 		// Omit the removed fields and publish the new version of the content type,
 		// followed by the field removal and final publish.
-		if err = upsertAndActivate(client, env, ct); err != nil {
+		if err = upsertAndActivate(ctx, client, env, ct); err != nil {
 			diags = append(diags, diag.Diagnostic{
 				Severity: diag.Error,
 				Summary:  "Failed to upsert and active content_type.",
@@ -311,7 +311,7 @@ func resourceContentTypeUpdate(ctx context.Context, d *schema.ResourceData, m in
 
 		if shouldSecondApply {
 			ct.Fields = secondApplyFields
-			if err = upsertAndActivate(client, env, ct); err != nil {
+			if err = upsertAndActivate(ctx, client, env, ct); err != nil {
 				diags = append(diags, diag.Diagnostic{
 					Severity: diag.Error,
 					Summary:  "Failed to upsert and active content_type.",
@@ -323,7 +323,7 @@ func resourceContentTypeUpdate(ctx context.Context, d *schema.ResourceData, m in
 	}
 
 	ct.Fields = newFields(d.Get("field").([]interface{}))
-	if err = upsertAndActivate(client, env, ct); err != nil {
+	if err = upsertAndActivate(ctx, client, env, ct); err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
 			Summary:  "Failed to upsert and active content_type.",
@@ -344,12 +344,12 @@ func resourceContentTypeUpdate(ctx context.Context, d *schema.ResourceData, m in
 	return
 }
 
-func upsertAndActivate(client *contentful.Client, env *contentful.Environment, ct *contentful.ContentType) error {
-	if err := client.ContentTypes.Upsert(env, ct); err != nil {
+func upsertAndActivate(ctx context.Context, client *contentful.Client, env *contentful.Environment, ct *contentful.ContentType) error {
+	if err := client.ContentTypes.Upsert(ctx, env, ct); err != nil {
 		return err
 	}
 
-	if err := client.ContentTypes.Activate(env, ct); err != nil {
+	if err := client.ContentTypes.Activate(ctx, env, ct); err != nil {
 		return err
 	}
 	return nil
@@ -360,7 +360,7 @@ func resourceContentTypeDelete(ctx context.Context, d *schema.ResourceData, m in
 	spaceID := d.Get("space_id").(string)
 	envID := d.Get("env_id").(string)
 
-	env, err := client.Environments.Get(spaceID, envID)
+	env, err := client.Environments.Get(ctx, spaceID, envID)
 	if err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -370,7 +370,7 @@ func resourceContentTypeDelete(ctx context.Context, d *schema.ResourceData, m in
 		return
 	}
 
-	ct, err := client.ContentTypes.Get(env, d.Id())
+	ct, err := client.ContentTypes.Get(ctx, env, d.Id())
 	if err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -380,7 +380,7 @@ func resourceContentTypeDelete(ctx context.Context, d *schema.ResourceData, m in
 		return
 	}
 
-	if err = client.ContentTypes.Deactivate(env, ct); err != nil {
+	if err = client.ContentTypes.Deactivate(ctx, env, ct); err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
 			Summary:  fmt.Sprintf("failed to deactivate ContentType %s", d.Id()),
@@ -389,7 +389,7 @@ func resourceContentTypeDelete(ctx context.Context, d *schema.ResourceData, m in
 		return
 	}
 
-	if err = client.ContentTypes.Delete(env, ct); err != nil {
+	if err = client.ContentTypes.Delete(ctx, env, ct); err != nil {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
 			Summary:  fmt.Sprintf("failed to delete ContentType %s", d.Id()),
@@ -423,17 +423,16 @@ func checkFieldsToOmit(oldFields, newFields []interface{}) (firstApplyFields, se
 	}
 
 	for i := 0; i < len(oldFields); i++ {
-		oldField := oldFields[i].(map[string]interface{})
+		oldFieldMap := oldFields[i].(map[string]interface{})
 
-		newField, ok := getFieldFromID(newFields, oldField["id"].(string))
+		newFieldMap, ok := getFieldFromID(newFields, oldFieldMap["id"].(string))
 
 		toOmitted := false
 		if !ok {
 			// field was deleted
 			toOmitted = true
 		} else {
-			if oldField["type"].(string) != newField["type"].(string) {
-				// field type is changed
+			if oldFieldMap["type"].(string) != newFieldMap["type"].(string) {
 				toOmitted = true
 			}
 		}
@@ -441,21 +440,12 @@ func checkFieldsToOmit(oldFields, newFields []interface{}) (firstApplyFields, se
 		shouldDelete := false
 		if ok {
 			// if field type is changed, should delete field completely
-			if oldField["type"].(string) != newField["type"].(string) {
+			if oldFieldMap["type"].(string) != newFieldMap["type"].(string) {
 				shouldDelete = true
 			}
 		}
 
-		field := &contentful.Field{
-			ID:        oldField["id"].(string),
-			Name:      oldField["name"].(string),
-			Type:      oldField["type"].(string),
-			LinkType:  oldField["link_type"].(string),
-			Localized: oldField["localized"].(bool),
-			Required:  oldField["required"].(bool),
-			Disabled:  oldField["disabled"].(bool),
-			Omitted:   oldField["omitted"].(bool),
-		}
+		field := newField(oldFieldMap)
 		if toOmitted {
 			field.Omitted = true
 		}
@@ -473,35 +463,37 @@ func checkFieldsToOmit(oldFields, newFields []interface{}) (firstApplyFields, se
 func newFields(newFields []interface{}) []*contentful.Field {
 	result := make([]*contentful.Field, len(newFields))
 	for i := 0; i < len(newFields); i++ {
-		newField := newFields[i].(map[string]interface{})
-
-		contentfulField := &contentful.Field{
-			ID:        newField["id"].(string),
-			Name:      newField["name"].(string),
-			Type:      newField["type"].(string),
-			Localized: newField["localized"].(bool),
-			Required:  newField["required"].(bool),
-			Disabled:  newField["disabled"].(bool),
-			Omitted:   newField["omitted"].(bool),
-		}
-
-		if linkType, ok := newField["link_type"].(string); ok {
-			contentfulField.LinkType = linkType
-		}
-
-		if validations, ok := newField["validations"].([]interface{}); ok {
-			parsedValidations, _ := contentful.ParseValidations(validations)
-
-			contentfulField.Validations = parsedValidations
-		}
-
-		if items := processItems(newField["items"].([]interface{})); items != nil {
-			contentfulField.Items = items
-		}
-
-		result[i] = contentfulField
+		newFieldMap := newFields[i].(map[string]interface{})
+		result[i] = newField(newFieldMap)
 	}
 	return result
+}
+
+func newField(newField map[string]interface{}) *contentful.Field {
+	contentfulField := &contentful.Field{
+		ID:        newField["id"].(string),
+		Name:      newField["name"].(string),
+		Type:      newField["type"].(string),
+		Localized: newField["localized"].(bool),
+		Required:  newField["required"].(bool),
+		Disabled:  newField["disabled"].(bool),
+		Omitted:   newField["omitted"].(bool),
+	}
+
+	if linkType, ok := newField["link_type"].(string); ok {
+		contentfulField.LinkType = linkType
+	}
+
+	if validations, ok := newField["validations"].([]interface{}); ok {
+		parsedValidations, _ := contentful.ParseValidations(validations)
+
+		contentfulField.Validations = parsedValidations
+	}
+
+	if items := processItems(newField["items"].([]interface{})); items != nil {
+		contentfulField.Items = items
+	}
+	return contentfulField
 }
 
 func processItems(fieldItems []interface{}) *contentful.FieldTypeArrayItem {

@@ -1,12 +1,13 @@
 package contentful
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func TestAccContentfulWebhook_Basic(t *testing.T) {
@@ -65,7 +66,7 @@ func testAccCheckContentfulWebhookExists(n string, webhook *contentful.Webhook) 
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		contentfulWebhook, err := client.Webhooks.Get(spaceID, rs.Primary.ID)
+		contentfulWebhook, err := client.Webhooks.Get(context.Background(), spaceID, rs.Primary.ID)
 		if err != nil {
 			return err
 		}
@@ -121,7 +122,7 @@ func testAccContentfulWebhookDestroy(s *terraform.State) error {
 		// sdk client
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		_, err := client.Webhooks.Get(spaceID, rs.Primary.ID)
+		_, err := client.Webhooks.Get(context.Background(), spaceID, rs.Primary.ID)
 		if _, ok := err.(contentful.NotFoundError); ok {
 			return nil
 		}

@@ -1,16 +1,19 @@
 package contentful
 
 import (
+	"context"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func resourceContentfulWebhook() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceCreateWebhook,
-		Read:   resourceReadWebhook,
-		Update: resourceUpdateWebhook,
-		Delete: resourceDeleteWebhook,
+		CreateContext: resourceCreateWebhook,
+		ReadContext:   resourceReadWebhook,
+		UpdateContext: resourceUpdateWebhook,
+		DeleteContext: resourceDeleteWebhook,
 
 		Schema: map[string]*schema.Schema{
 			"version": {
@@ -56,7 +59,7 @@ func resourceContentfulWebhook() *schema.Resource {
 	}
 }
 
-func resourceCreateWebhook(d *schema.ResourceData, m interface{}) (err error) {
+func resourceCreateWebhook(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 
@@ -69,14 +72,22 @@ func resourceCreateWebhook(d *schema.ResourceData, m interface{}) (err error) {
 		HTTPBasicPassword: d.Get("http_basic_auth_password").(string),
 	}
 
-	err = client.Webhooks.Upsert(spaceID, webhook)
+	err := client.Webhooks.Upsert(ctx, spaceID, webhook)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	err = setWebhookProperties(d, webhook)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	d.SetId(webhook.Sys.ID)
@@ -84,19 +95,23 @@ func resourceCreateWebhook(d *schema.ResourceData, m interface{}) (err error) {
 	return nil
 }
 
-func resourceUpdateWebhook(d *schema.ResourceData, m interface{}) (err error) {
+func resourceUpdateWebhook(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	webhookID := d.Id()
 	defer func() {
-		if err != nil {
+		if diags.HasError() {
 			d.Partial(true)
 		}
 	}()
 
-	webhook, err := client.Webhooks.Get(spaceID, webhookID)
+	webhook, err := client.Webhooks.Get(ctx, spaceID, webhookID)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	webhook.Name = d.Get("name").(string)
@@ -106,14 +121,22 @@ func resourceUpdateWebhook(d *schema.ResourceData, m interface{}) (err error) {
 	webhook.HTTPBasicUsername = d.Get("http_basic_auth_username").(string)
 	webhook.HTTPBasicPassword = d.Get("http_basic_auth_password").(string)
 
-	err = client.Webhooks.Upsert(spaceID, webhook)
+	err = client.Webhooks.Upsert(ctx, spaceID, webhook)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	err = setWebhookProperties(d, webhook)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	d.SetId(webhook.Sys.ID)
@@ -121,40 +144,63 @@ func resourceUpdateWebhook(d *schema.ResourceData, m interface{}) (err error) {
 	return nil
 }
 
-func resourceReadWebhook(d *schema.ResourceData, m interface{}) error {
+func resourceReadWebhook(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	webhookID := d.Id()
 
-	webhook, err := client.Webhooks.Get(spaceID, webhookID)
+	webhook, err := client.Webhooks.Get(ctx, spaceID, webhookID)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		d.SetId("")
 		return nil
 	}
 
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
-	return setWebhookProperties(d, webhook)
+	err = setWebhookProperties(d, webhook)
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
+	}
+	return
 }
 
-func resourceDeleteWebhook(d *schema.ResourceData, m interface{}) (err error) {
+func resourceDeleteWebhook(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	webhookID := d.Id()
 
-	webhook, err := client.Webhooks.Get(spaceID, webhookID)
+	webhook, err := client.Webhooks.Get(ctx, spaceID, webhookID)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
-	err = client.Webhooks.Delete(spaceID, webhook)
+	err = client.Webhooks.Delete(ctx, spaceID, webhook)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		return nil
 	}
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
+	}
 
-	return err
+	return
 }
 
 func setWebhookProperties(d *schema.ResourceData, webhook *contentful.Webhook) (err error) {

@@ -1,12 +1,13 @@
 package contentful
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func TestAccContentfulLocales_Basic(t *testing.T) {
@@ -70,7 +71,7 @@ func testAccCheckContentfulLocaleExists(n string, locale *contentful.Locale) res
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		contentfulLocale, err := client.Locales.Get(spaceID, localeID)
+		contentfulLocale, err := client.Locales.Get(context.Background(), spaceID, localeID)
 		if err != nil {
 			return err
 		}
@@ -135,7 +136,7 @@ func testAccContentfulLocaleDestroy(s *terraform.State) error {
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		locale, _ := client.Locales.Get(spaceID, localeID)
+		locale, _ := client.Locales.Get(context.Background(), spaceID, localeID)
 
 		if locale != nil {
 			return fmt.Errorf("locale still exists with id: %s", localeID)

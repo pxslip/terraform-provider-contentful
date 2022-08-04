@@ -2,7 +2,7 @@ package contentful
 
 import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 // Provider returns the Terraform Provider as a scheme and makes resources reachable

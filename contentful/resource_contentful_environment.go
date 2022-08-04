@@ -1,16 +1,19 @@
 package contentful
 
 import (
+	"context"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func resourceContentfulEnvironment() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceCreateEnvironment,
-		Read:   resourceReadEnvironment,
-		Update: resourceUpdateEnvironment,
-		Delete: resourceDeleteEnvironment,
+		CreateContext: resourceCreateEnvironment,
+		ReadContext:   resourceReadEnvironment,
+		UpdateContext: resourceUpdateEnvironment,
+		DeleteContext: resourceDeleteEnvironment,
 
 		Schema: map[string]*schema.Schema{
 			"version": {
@@ -29,20 +32,28 @@ func resourceContentfulEnvironment() *schema.Resource {
 	}
 }
 
-func resourceCreateEnvironment(d *schema.ResourceData, m interface{}) (err error) {
+func resourceCreateEnvironment(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 
 	environment := &contentful.Environment{
 		Name: d.Get("name").(string),
 	}
 
-	err = client.Environments.Upsert(d.Get("space_id").(string), environment)
+	err := client.Environments.Upsert(ctx, d.Get("space_id").(string), environment)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	if err := setEnvironmentProperties(d, environment); err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	d.SetId(environment.Name)
@@ -50,30 +61,42 @@ func resourceCreateEnvironment(d *schema.ResourceData, m interface{}) (err error
 	return nil
 }
 
-func resourceUpdateEnvironment(d *schema.ResourceData, m interface{}) (err error) {
+func resourceUpdateEnvironment(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	environmentID := d.Id()
 	defer func() {
-		if err != nil {
+		if diags.HasError() {
 			d.Partial(true)
 		}
 	}()
 
-	environment, err := client.Environments.Get(spaceID, environmentID)
+	environment, err := client.Environments.Get(ctx, spaceID, environmentID)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	environment.Name = d.Get("name").(string)
 
-	err = client.Environments.Upsert(spaceID, environment)
+	err = client.Environments.Upsert(ctx, spaceID, environment)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	if err := setEnvironmentProperties(d, environment); err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	d.SetId(environment.Sys.ID)
@@ -81,31 +104,58 @@ func resourceUpdateEnvironment(d *schema.ResourceData, m interface{}) (err error
 	return nil
 }
 
-func resourceReadEnvironment(d *schema.ResourceData, m interface{}) (err error) {
+func resourceReadEnvironment(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	environmentID := d.Id()
 
-	environment, err := client.Environments.Get(spaceID, environmentID)
+	environment, err := client.Environments.Get(ctx, spaceID, environmentID)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		d.SetId("")
 		return nil
 	}
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
+	}
 
-	return setEnvironmentProperties(d, environment)
+	err = setEnvironmentProperties(d, environment)
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
+	}
+	return
 }
 
-func resourceDeleteEnvironment(d *schema.ResourceData, m interface{}) (err error) {
+func resourceDeleteEnvironment(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	environmentID := d.Id()
 
-	environment, err := client.Environments.Get(spaceID, environmentID)
+	environment, err := client.Environments.Get(ctx, spaceID, environmentID)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
-	return client.Environments.Delete(spaceID, environment)
+	err = client.Environments.Delete(ctx, spaceID, environment)
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
+	}
+	return
 }
 
 func setEnvironmentProperties(d *schema.ResourceData, environment *contentful.Environment) error {
