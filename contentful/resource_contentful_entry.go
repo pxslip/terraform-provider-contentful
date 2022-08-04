@@ -10,10 +10,10 @@ import (
 
 func resourceContentfulEntry() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceCreateEntry,
-		ReadContext:   resourceReadEntry,
-		UpdateContext: resourceUpdateEntry,
-		DeleteContext: resourceDeleteEntry,
+		CreateContext: wrapEntry(resourceCreateEntry),
+		ReadContext:   wrapEntry(resourceReadEntry),
+		UpdateContext: wrapEntry(resourceUpdateEntry),
+		DeleteContext: wrapEntry(resourceDeleteEntry),
 
 		Schema: map[string]*schema.Schema{
 			"entry_id": {
@@ -72,20 +72,32 @@ func resourceContentfulEntry() *schema.Resource {
 	}
 }
 
-func resourceCreateEntry(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
-	spaceID := d.Get("space_id").(string)
-	envID := d.Get("env_id").(string)
+type ContentfulEntryClient interface {
+	Get(ctx context.Context, env *contentful.Environment, entryID string) (*contentful.Entry, error)
+	Upsert(ctx context.Context, env *contentful.Environment, contentTypeID string, e *contentful.Entry) error
+	Delete(ctx context.Context, env *contentful.Environment, entryID string) error
 
-	env, err := client.Environments.Get(ctx, spaceID, envID)
-	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
-		return
+	Publish(ctx context.Context, env *contentful.Environment, entry *contentful.Entry) error
+	Unpublish(ctx context.Context, env *contentful.Environment, entry *contentful.Entry) error
+	Archive(ctx context.Context, env *contentful.Environment, entry *contentful.Entry) error
+	Unarchive(ctx context.Context, env *contentful.Environment, entry *contentful.Entry) error
+}
+
+func wrapEntry(f func(ctx context.Context, d *schema.ResourceData, env *contentful.Environment, entryClient ContentfulEntryClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+		client := m.(*contentful.Client)
+		spaceID := d.Get("space_id").(string)
+		envID := d.Get("env_id").(string)
+		env, err := client.Environments.Get(ctx, spaceID, envID)
+		if err != nil {
+			diags = append(diags, contentfulErrorToDiagnostic(err)...)
+			return
+		}
+		return f(ctx, d, env, client.Entries)
 	}
+}
 
+func resourceCreateEntry(ctx context.Context, d *schema.ResourceData, env *contentful.Environment, client ContentfulEntryClient) (diags diag.Diagnostics) {
 	fieldProperties := map[string]interface{}{}
 	rawField := d.Get("field").([]interface{})
 	for i := 0; i < len(rawField); i++ {
@@ -102,64 +114,39 @@ func resourceCreateEntry(ctx context.Context, d *schema.ResourceData, m interfac
 		},
 	}
 
-	err = client.Entries.Upsert(ctx, env, d.Get("contenttype_id").(string), entry)
+	err := client.Upsert(ctx, env, d.Get("contenttype_id").(string), entry)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	if err := setEntryProperties(d, entry); err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	d.SetId(entry.Sys.ID)
 
-	if err := setEntryState(ctx, d, m); err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+	if err := setEntryState(ctx, d, env, client); err != nil {
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	return
 }
 
-func resourceUpdateEntry(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
-	spaceID := d.Get("space_id").(string)
+func resourceUpdateEntry(ctx context.Context, d *schema.ResourceData, env *contentful.Environment, client ContentfulEntryClient) (diags diag.Diagnostics) {
 	entryID := d.Id()
-	envID := d.Get("env_id").(string)
 	defer func() {
 		if diags.HasError() {
 			d.Partial(true)
 		}
 	}()
 
-	// lookup the environment
-	env, err := client.Environments.Get(ctx, spaceID, envID)
-	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
-		return
-	}
-
 	// lookup the entry
-	entry, err := client.Entries.Get(ctx, env, entryID)
+	entry, err := client.Get(ctx, env, entryID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
@@ -174,134 +161,81 @@ func resourceUpdateEntry(ctx context.Context, d *schema.ResourceData, m interfac
 	entry.Fields = fieldProperties
 	entry.Locale = d.Get("locale").(string)
 
-	err = client.Entries.Upsert(ctx, env, d.Get("contenttype_id").(string), entry)
+	err = client.Upsert(ctx, env, d.Get("contenttype_id").(string), entry)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	d.SetId(entry.Sys.ID)
 
 	if err := setEntryProperties(d, entry); err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
-	if err := setEntryState(ctx, d, m); err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+	if err := setEntryState(ctx, d, env, client); err != nil {
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	return
 }
 
-func setEntryState(ctx context.Context, d *schema.ResourceData, m interface{}) (err error) {
-	client := m.(*contentful.Client)
-	spaceID := d.Get("space_id").(string)
+func setEntryState(ctx context.Context, d *schema.ResourceData, env *contentful.Environment, client ContentfulEntryClient) (err error) {
 	entryID := d.Id()
-	envID := d.Get("env_id").(string)
 
-	env, err := client.Environments.Get(ctx, spaceID, envID)
-	if err != nil {
-		return err
-	}
-
-	entry, _ := client.Entries.Get(ctx, env, entryID)
+	entry, _ := client.Get(ctx, env, entryID)
 
 	if d.Get("published").(bool) && entry.Sys.PublishedAt == "" {
-		err = client.Entries.Publish(ctx, env, entry)
+		err = client.Publish(ctx, env, entry)
 	} else if !d.Get("published").(bool) && entry.Sys.PublishedAt != "" {
-		err = client.Entries.Unpublish(ctx, env, entry)
+		err = client.Unpublish(ctx, env, entry)
 	}
 
 	if d.Get("archived").(bool) && entry.Sys.ArchivedAt == "" {
-		err = client.Entries.Archive(ctx, env, entry)
+		err = client.Archive(ctx, env, entry)
 	} else if !d.Get("archived").(bool) && entry.Sys.ArchivedAt != "" {
-		err = client.Entries.Unarchive(ctx, env, entry)
+		err = client.Unarchive(ctx, env, entry)
 	}
 
 	return err
 }
 
-func resourceReadEntry(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
-	spaceID := d.Get("space_id").(string)
+func resourceReadEntry(ctx context.Context, d *schema.ResourceData, env *contentful.Environment, client ContentfulEntryClient) (diags diag.Diagnostics) {
 	entryID := d.Id()
-	envID := d.Get("env_id").(string)
 
-	env, err := client.Environments.Get(ctx, spaceID, envID)
-	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
-		return
-	}
-
-	entry, err := client.Entries.Get(ctx, env, entryID)
+	entry, err := client.Get(ctx, env, entryID)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		d.SetId("")
 		return nil
 	}
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = setEntryProperties(d, entry)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	return
 }
 
-func resourceDeleteEntry(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
-	spaceID := d.Get("space_id").(string)
+func resourceDeleteEntry(ctx context.Context, d *schema.ResourceData, env *contentful.Environment, client ContentfulEntryClient) (diags diag.Diagnostics) {
 	entryID := d.Id()
-	envID := d.Get("env_id").(string)
 
-	env, err := client.Environments.Get(ctx, spaceID, envID)
+	_, err := client.Get(ctx, env, entryID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
-	_, err = client.Entries.Get(ctx, env, entryID)
+	err = client.Delete(ctx, env, entryID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
-		return
-	}
-
-	err = client.Entries.Delete(ctx, env, entryID)
-	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 	return

@@ -10,10 +10,10 @@ import (
 
 func resourceContentfulSpace() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceSpaceCreate,
-		ReadContext:   resourceSpaceRead,
-		UpdateContext: resourceSpaceUpdate,
-		DeleteContext: resourceSpaceDelete,
+		CreateContext: wrapSpace(resourceSpaceCreate),
+		ReadContext:   wrapSpace(resourceSpaceRead),
+		UpdateContext: wrapSpace(resourceSpaceUpdate),
+		DeleteContext: wrapSpace(resourceSpaceDelete),
 
 		Schema: map[string]*schema.Schema{
 			"version": {
@@ -34,29 +34,34 @@ func resourceContentfulSpace() *schema.Resource {
 	}
 }
 
-func resourceSpaceCreate(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+type ContentfulSpaceClient interface {
+	Get(context.Context, string) (*contentful.Space, error)
+	Upsert(context.Context, *contentful.Space) error
+	Delete(context.Context, *contentful.Space) error
+}
 
+func wrapSpace(f func(ctx context.Context, d *schema.ResourceData, client ContentfulSpaceClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+		client := m.(*contentful.Client)
+		return f(ctx, d, client.Spaces)
+	}
+}
+
+func resourceSpaceCreate(ctx context.Context, d *schema.ResourceData, client ContentfulSpaceClient) (diags diag.Diagnostics) {
 	space := &contentful.Space{
 		Name:          d.Get("name").(string),
 		DefaultLocale: d.Get("default_locale").(string),
 	}
 
-	err := client.Spaces.Upsert(ctx, space)
+	err := client.Upsert(ctx, space)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = updateSpaceProperties(d, space)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
@@ -65,28 +70,23 @@ func resourceSpaceCreate(ctx context.Context, d *schema.ResourceData, m interfac
 	return nil
 }
 
-func resourceSpaceRead(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceSpaceRead(ctx context.Context, d *schema.ResourceData, client ContentfulSpaceClient) (diags diag.Diagnostics) {
 	spaceID := d.Id()
 
-	_, err := client.Spaces.Get(ctx, spaceID)
+	_, err := client.Get(ctx, spaceID)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		d.SetId("")
 		return nil
 	}
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	return
 }
 
-func resourceSpaceUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceSpaceUpdate(ctx context.Context, d *schema.ResourceData, client ContentfulSpaceClient) (diags diag.Diagnostics) {
 	spaceID := d.Id()
 	defer func() {
 		if diags.HasError() {
@@ -94,59 +94,43 @@ func resourceSpaceUpdate(ctx context.Context, d *schema.ResourceData, m interfac
 		}
 	}()
 
-	space, err := client.Spaces.Get(ctx, spaceID)
+	space, err := client.Get(ctx, spaceID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	space.Name = d.Get("name").(string)
 
-	err = client.Spaces.Upsert(ctx, space)
+	err = client.Upsert(ctx, space)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = updateSpaceProperties(d, space)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 	return
 }
 
-func resourceSpaceDelete(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceSpaceDelete(ctx context.Context, d *schema.ResourceData, client ContentfulSpaceClient) (diags diag.Diagnostics) {
 	spaceID := d.Id()
 
-	space, err := client.Spaces.Get(ctx, spaceID)
+	space, err := client.Get(ctx, spaceID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
-	err = client.Spaces.Delete(ctx, space)
+	err = client.Delete(ctx, space)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		return nil
 	}
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 

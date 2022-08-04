@@ -10,10 +10,10 @@ import (
 
 func resourceContentfulLocale() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceCreateLocale,
-		ReadContext:   resourceReadLocale,
-		UpdateContext: resourceUpdateLocale,
-		DeleteContext: resourceDeleteLocale,
+		CreateContext: wrapLocale(resourceCreateLocale),
+		ReadContext:   wrapLocale(resourceReadLocale),
+		UpdateContext: wrapLocale(resourceUpdateLocale),
+		DeleteContext: wrapLocale(resourceDeleteLocale),
 
 		Schema: map[string]*schema.Schema{
 			"version": {
@@ -56,8 +56,20 @@ func resourceContentfulLocale() *schema.Resource {
 	}
 }
 
-func resourceCreateLocale(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+type ContentfulLocaleClient interface {
+	Get(context.Context, string, string) (*contentful.Locale, error)
+	Upsert(context.Context, string, *contentful.Locale) error
+	Delete(context.Context, string, *contentful.Locale) error
+}
+
+func wrapLocale(f func(ctx context.Context, d *schema.ResourceData, client ContentfulLocaleClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+		client := m.(*contentful.Client)
+		return f(ctx, d, client.Locales)
+	}
+}
+
+func resourceCreateLocale(ctx context.Context, d *schema.ResourceData, client ContentfulLocaleClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 
 	locale := &contentful.Locale{
@@ -69,21 +81,15 @@ func resourceCreateLocale(ctx context.Context, d *schema.ResourceData, m interfa
 		CMA:          d.Get("cma").(bool),
 	}
 
-	err := client.Locales.Upsert(ctx, spaceID, locale)
+	err := client.Upsert(ctx, spaceID, locale)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = setLocaleProperties(d, locale)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
@@ -92,38 +98,30 @@ func resourceCreateLocale(ctx context.Context, d *schema.ResourceData, m interfa
 	return nil
 }
 
-func resourceReadLocale(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceReadLocale(ctx context.Context, d *schema.ResourceData, client ContentfulLocaleClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	localeID := d.Id()
 
-	locale, err := client.Locales.Get(ctx, spaceID, localeID)
+	locale, err := client.Get(ctx, spaceID, localeID)
 	if _, ok := err.(*contentful.NotFoundError); ok {
 		d.SetId("")
 		return nil
 	}
 
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = setLocaleProperties(d, locale)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 	return
 }
 
-func resourceUpdateLocale(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceUpdateLocale(ctx context.Context, d *schema.ResourceData, client ContentfulLocaleClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	localeID := d.Id()
 	defer func() {
@@ -132,12 +130,9 @@ func resourceUpdateLocale(ctx context.Context, d *schema.ResourceData, m interfa
 		}
 	}()
 
-	locale, err := client.Locales.Get(ctx, spaceID, localeID)
+	locale, err := client.Get(ctx, spaceID, localeID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
@@ -148,51 +143,38 @@ func resourceUpdateLocale(ctx context.Context, d *schema.ResourceData, m interfa
 	locale.CDA = d.Get("cda").(bool)
 	locale.CMA = d.Get("cma").(bool)
 
-	err = client.Locales.Upsert(ctx, spaceID, locale)
+	err = client.Upsert(ctx, spaceID, locale)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = setLocaleProperties(d, locale)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	return
 }
 
-func resourceDeleteLocale(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceDeleteLocale(ctx context.Context, d *schema.ResourceData, client ContentfulLocaleClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	localeID := d.Id()
 
-	locale, err := client.Locales.Get(ctx, spaceID, localeID)
+	locale, err := client.Get(ctx, spaceID, localeID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
-	err = client.Locales.Delete(ctx, spaceID, locale)
+	err = client.Delete(ctx, spaceID, locale)
 	if _, ok := err.(*contentful.NotFoundError); ok {
 		return nil
 	}
 
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 

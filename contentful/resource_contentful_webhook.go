@@ -10,10 +10,10 @@ import (
 
 func resourceContentfulWebhook() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceCreateWebhook,
-		ReadContext:   resourceReadWebhook,
-		UpdateContext: resourceUpdateWebhook,
-		DeleteContext: resourceDeleteWebhook,
+		CreateContext: wrapWebhook(resourceCreateWebhook),
+		ReadContext:   wrapWebhook(resourceReadWebhook),
+		UpdateContext: wrapWebhook(resourceUpdateWebhook),
+		DeleteContext: wrapWebhook(resourceDeleteWebhook),
 
 		Schema: map[string]*schema.Schema{
 			"version": {
@@ -59,8 +59,20 @@ func resourceContentfulWebhook() *schema.Resource {
 	}
 }
 
-func resourceCreateWebhook(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+type ContentfulWebhookClient interface {
+	Get(context.Context, string, string) (*contentful.Webhook, error)
+	Upsert(context.Context, string, *contentful.Webhook) error
+	Delete(context.Context, string, *contentful.Webhook) error
+}
+
+func wrapWebhook(f func(ctx context.Context, d *schema.ResourceData, client ContentfulWebhookClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+		client := m.(*contentful.Client)
+		return f(ctx, d, client.Webhooks)
+	}
+}
+
+func resourceCreateWebhook(ctx context.Context, d *schema.ResourceData, client ContentfulWebhookClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 
 	webhook := &contentful.Webhook{
@@ -72,21 +84,15 @@ func resourceCreateWebhook(ctx context.Context, d *schema.ResourceData, m interf
 		HTTPBasicPassword: d.Get("http_basic_auth_password").(string),
 	}
 
-	err := client.Webhooks.Upsert(ctx, spaceID, webhook)
+	err := client.Upsert(ctx, spaceID, webhook)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = setWebhookProperties(d, webhook)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
@@ -95,8 +101,7 @@ func resourceCreateWebhook(ctx context.Context, d *schema.ResourceData, m interf
 	return nil
 }
 
-func resourceUpdateWebhook(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceUpdateWebhook(ctx context.Context, d *schema.ResourceData, client ContentfulWebhookClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	webhookID := d.Id()
 	defer func() {
@@ -105,12 +110,9 @@ func resourceUpdateWebhook(ctx context.Context, d *schema.ResourceData, m interf
 		}
 	}()
 
-	webhook, err := client.Webhooks.Get(ctx, spaceID, webhookID)
+	webhook, err := client.Get(ctx, spaceID, webhookID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
@@ -121,21 +123,15 @@ func resourceUpdateWebhook(ctx context.Context, d *schema.ResourceData, m interf
 	webhook.HTTPBasicUsername = d.Get("http_basic_auth_username").(string)
 	webhook.HTTPBasicPassword = d.Get("http_basic_auth_password").(string)
 
-	err = client.Webhooks.Upsert(ctx, spaceID, webhook)
+	err = client.Upsert(ctx, spaceID, webhook)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = setWebhookProperties(d, webhook)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
@@ -144,59 +140,45 @@ func resourceUpdateWebhook(ctx context.Context, d *schema.ResourceData, m interf
 	return nil
 }
 
-func resourceReadWebhook(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceReadWebhook(ctx context.Context, d *schema.ResourceData, client ContentfulWebhookClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	webhookID := d.Id()
 
-	webhook, err := client.Webhooks.Get(ctx, spaceID, webhookID)
+	webhook, err := client.Get(ctx, spaceID, webhookID)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		d.SetId("")
 		return nil
 	}
 
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
 	err = setWebhookProperties(d, webhook)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 	return
 }
 
-func resourceDeleteWebhook(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
-	client := m.(*contentful.Client)
+func resourceDeleteWebhook(ctx context.Context, d *schema.ResourceData, client ContentfulWebhookClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	webhookID := d.Id()
 
-	webhook, err := client.Webhooks.Get(ctx, spaceID, webhookID)
+	webhook, err := client.Get(ctx, spaceID, webhookID)
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
-	err = client.Webhooks.Delete(ctx, spaceID, webhook)
+	err = client.Delete(ctx, spaceID, webhook)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		return nil
 	}
 	if err != nil {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Error,
-			Summary:  err.Error(),
-		})
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
 	}
 
