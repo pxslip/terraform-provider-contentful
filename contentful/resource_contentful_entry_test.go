@@ -1,12 +1,13 @@
 package contentful
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func TestAccContentfulEntry_Basic(t *testing.T) {
@@ -68,7 +69,7 @@ func testAccCheckContentfulEntryExists(n string, entry *contentful.Entry) resour
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		contentfulEntry, err := client.Entries.Get(env, rs.Primary.ID)
+		contentfulEntry, err := client.Entries.Get(context.Background(), env, rs.Primary.ID)
 		if err != nil {
 			return err
 		}
@@ -121,7 +122,7 @@ func testAccContentfulEntryDestroy(s *terraform.State) error {
 		// sdk client
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		entry, _ := client.Entries.Get(env, rs.Primary.ID)
+		entry, _ := client.Entries.Get(context.Background(), env, rs.Primary.ID)
 		if entry == nil {
 			return nil
 		}

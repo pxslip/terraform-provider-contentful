@@ -1,13 +1,14 @@
 package contentful
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func TestAccContentfulAPIKey_Basic(t *testing.T) {
@@ -66,7 +67,7 @@ func testAccCheckContentfulAPIKeyExists(n string, apiKey *contentful.APIKey) res
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		contentfulAPIKey, err := client.APIKeys.Get(spaceID, apiKeyID)
+		contentfulAPIKey, err := client.APIKeys.Get(context.Background(), spaceID, apiKeyID)
 		if err != nil {
 			return err
 		}
@@ -112,7 +113,7 @@ func testAccContentfulAPIKeyDestroy(s *terraform.State) error {
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		_, err := client.APIKeys.Get(spaceID, apiKeyID)
+		_, err := client.APIKeys.Get(context.Background(), spaceID, apiKeyID)
 		if _, ok := err.(contentful.NotFoundError); ok {
 			return nil
 		}

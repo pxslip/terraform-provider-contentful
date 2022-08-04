@@ -1,8 +1,11 @@
 package contentful
 
 import (
+	"context"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 // Provider returns the Terraform Provider as a scheme and makes resources reachable
@@ -32,12 +35,12 @@ func Provider() *schema.Provider {
 			"contentful_entry":       resourceContentfulEntry(),
 			"contentful_asset":       resourceContentfulAsset(),
 		},
-		ConfigureFunc: providerConfigure,
+		ConfigureContextFunc: providerConfigure,
 	}
 }
 
 // providerConfigure sets the configuration for the Terraform Provider
-func providerConfigure(d *schema.ResourceData) (interface{}, error) {
+func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	cma := contentful.NewCMA(d.Get("cma_token").(string))
 	cma.SetOrganization(d.Get("organization_id").(string))
 

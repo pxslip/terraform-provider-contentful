@@ -1,12 +1,13 @@
 package contentful
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func TestAccContentfulContentType_Basic(t *testing.T) {
@@ -92,7 +93,7 @@ func testAccCheckContentfulContentTypeExists(n string, contentType *contentful.C
 			},
 		}
 
-		ct, err := client.ContentTypes.Get(env, rs.Primary.ID)
+		ct, err := client.ContentTypes.Get(context.Background(), env, rs.Primary.ID)
 		if err != nil {
 			return err
 		}
@@ -132,7 +133,7 @@ func testAccCheckContentfulContentTypeDestroy(s *terraform.State) (err error) {
 			},
 		}
 
-		_, err := client.ContentTypes.Get(env, rs.Primary.ID)
+		_, err := client.ContentTypes.Get(context.Background(), env, rs.Primary.ID)
 		if _, ok := err.(contentful.NotFoundError); ok {
 			return nil
 		}
@@ -165,7 +166,7 @@ resource "contentful_contenttype" "mycontenttype" {
 		localized = false
 		name      = "Field 2"
 		omitted   = false
-		required  = true
+		required  = false
 		type      = "Integer"
 	}
 }
@@ -284,7 +285,7 @@ resource "contentful_contenttype" "content_type_with_id" {
 		name      = "Field 2 name"
 		omitted   = false
 		required  = true
-		type      = "Integer"
+		type      = "Symbol"
 	}
 }
 `
@@ -311,8 +312,16 @@ resource "contentful_contenttype" "mycontenttype" {
 		localized = false
 		name      = "Field 2"
 		omitted   = false
-		required  = true
-		type      = "Symbol" // This field is changed
+		required  = false
+		type      = "Integer" // This field is changed
+
+		validations = [
+			jsonencode({
+				range = {
+					min = 1
+				}
+			})
+		]
 	}
 }
 `

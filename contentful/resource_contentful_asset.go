@@ -1,18 +1,19 @@
 package contentful
 
 import (
-	"fmt"
+	"context"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func resourceContentfulAsset() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceCreateAsset,
-		Read:   resourceReadAsset,
-		Update: resourceUpdateAsset,
-		Delete: resourceDeleteAsset,
+		CreateContext: wrapAsset(resourceCreateAsset),
+		ReadContext:   wrapAsset(resourceReadAsset),
+		UpdateContext: wrapAsset(resourceUpdateAsset),
+		DeleteContext: wrapAsset(resourceDeleteAsset),
 
 		Schema: map[string]*schema.Schema{
 			"asset_id": {
@@ -135,9 +136,25 @@ func resourceContentfulAsset() *schema.Resource {
 	}
 }
 
-func resourceCreateAsset(d *schema.ResourceData, m interface{}) (err error) {
-	client := m.(*contentful.Client)
+type ContentfulAssetClient interface {
+	Get(ctx context.Context, spaceID string, assetID string) (*contentful.Asset, error)
+	Upsert(ctx context.Context, spaceID string, asset *contentful.Asset) error
+	Process(ctx context.Context, spaceID string, asset *contentful.Asset) error
+	Delete(ctx context.Context, spaceID string, asset *contentful.Asset) error
+	Publish(ctx context.Context, spaceID string, asset *contentful.Asset) error
+	Unpublish(ctx context.Context, spaceID string, asset *contentful.Asset) error
+	Archive(ctx context.Context, spaceID string, asset *contentful.Asset) error
+	Unarchive(ctx context.Context, spaceID string, asset *contentful.Asset) error
+}
 
+func wrapAsset(f func(ctx context.Context, d *schema.ResourceData, client ContentfulAssetClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+		client := m.(*contentful.Client)
+		return f(ctx, d, client.Assets)
+	}
+}
+
+func resourceCreateAsset(ctx context.Context, d *schema.ResourceData, client ContentfulAssetClient) (diags diag.Diagnostics) {
 	fields := d.Get("fields").([]interface{})[0].(map[string]interface{})
 
 	localizedTitle := map[string]string{}
@@ -156,7 +173,11 @@ func resourceCreateAsset(d *schema.ResourceData, m interface{}) (err error) {
 
 	files := fields["file"].(*schema.Set).List()
 	if len(files) != 1 {
-		return fmt.Errorf("file should be single item")
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "file should be single item",
+		})
+		return
 	}
 	file := files[0].(map[string]interface{})
 
@@ -190,43 +211,47 @@ func resourceCreateAsset(d *schema.ResourceData, m interface{}) (err error) {
 		asset.Fields.File[d.Get("locale").(string)].Details = details
 	}
 
-	err = client.Assets.Upsert(d.Get("space_id").(string), asset)
+	err := client.Upsert(ctx, d.Get("space_id").(string), asset)
 	if err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
-	err = client.Assets.Process(d.Get("space_id").(string), asset)
+	err = client.Process(ctx, d.Get("space_id").(string), asset)
 	if err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
 	d.SetId(asset.Sys.ID)
 
 	if err := setAssetProperties(d, asset); err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
-	err = setAssetState(d, m)
+	err = setAssetState(ctx, d, client)
 	if err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
-	return err
+	return
 }
 
-func resourceUpdateAsset(d *schema.ResourceData, m interface{}) (err error) {
-	client := m.(*contentful.Client)
+func resourceUpdateAsset(ctx context.Context, d *schema.ResourceData, client ContentfulAssetClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	assetID := d.Id()
 	defer func() {
-		if err != nil {
+		if diags.HasError() {
 			d.Partial(true)
 		}
 	}()
 
-	asset, err := client.Assets.Get(spaceID, assetID)
+	asset, err := client.Get(ctx, spaceID, assetID)
 	if err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
 	fields := d.Get("fields").([]interface{})[0].(map[string]interface{})
@@ -247,7 +272,11 @@ func resourceUpdateAsset(d *schema.ResourceData, m interface{}) (err error) {
 
 	files := fields["file"].(*schema.Set).List()
 	if len(files) != 1 {
-		return fmt.Errorf("file should be single item")
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "file should be single item",
+		})
+		return
 	}
 	file := files[0].(map[string]interface{})
 
@@ -281,47 +310,50 @@ func resourceUpdateAsset(d *schema.ResourceData, m interface{}) (err error) {
 		asset.Fields.File[d.Get("locale").(string)].Details = details
 	}
 
-	err = client.Assets.Upsert(d.Get("space_id").(string), asset)
+	err = client.Upsert(ctx, d.Get("space_id").(string), asset)
 	if err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
-	err = client.Assets.Process(d.Get("space_id").(string), asset)
+	err = client.Process(ctx, d.Get("space_id").(string), asset)
 	if err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
 	d.SetId(asset.Sys.ID)
 
 	if err := setAssetProperties(d, asset); err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
-	err = setAssetState(d, m)
+	err = setAssetState(ctx, d, client)
 	if err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
-	return err
+	return
 }
 
-func setAssetState(d *schema.ResourceData, m interface{}) (err error) {
-	client := m.(*contentful.Client)
+func setAssetState(ctx context.Context, d *schema.ResourceData, client ContentfulAssetClient) (err error) {
 	spaceID := d.Get("space_id").(string)
 	assetID := d.Id()
 
-	asset, _ := client.Assets.Get(spaceID, assetID)
+	asset, _ := client.Get(ctx, spaceID, assetID)
 
 	if d.Get("published").(bool) && asset.Sys.PublishedAt == "" {
-		err = client.Assets.Publish(spaceID, asset)
+		err = client.Publish(ctx, spaceID, asset)
 	} else if !d.Get("published").(bool) && asset.Sys.PublishedAt != "" {
-		err = client.Assets.Unpublish(spaceID, asset)
+		err = client.Unpublish(ctx, spaceID, asset)
 	}
 
 	if d.Get("archived").(bool) && asset.Sys.ArchivedAt == "" {
-		err = client.Assets.Archive(spaceID, asset)
+		err = client.Archive(ctx, spaceID, asset)
 	} else if !d.Get("archived").(bool) && asset.Sys.ArchivedAt != "" {
-		err = client.Assets.Unarchive(spaceID, asset)
+		err = client.Unarchive(ctx, spaceID, asset)
 	}
 
 	err = setAssetProperties(d, asset)
@@ -329,31 +361,44 @@ func setAssetState(d *schema.ResourceData, m interface{}) (err error) {
 	return err
 }
 
-func resourceReadAsset(d *schema.ResourceData, m interface{}) (err error) {
-	client := m.(*contentful.Client)
+func resourceReadAsset(ctx context.Context, d *schema.ResourceData, client ContentfulAssetClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	assetID := d.Id()
 
-	asset, err := client.Assets.Get(spaceID, assetID)
+	asset, err := client.Get(ctx, spaceID, assetID)
 	if _, ok := err.(contentful.NotFoundError); ok {
 		d.SetId("")
 		return nil
 	}
+	if err != nil {
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
+	}
 
-	return setAssetProperties(d, asset)
+	err = setAssetProperties(d, asset)
+	if err != nil {
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
+	}
+	return
 }
 
-func resourceDeleteAsset(d *schema.ResourceData, m interface{}) (err error) {
-	client := m.(*contentful.Client)
+func resourceDeleteAsset(ctx context.Context, d *schema.ResourceData, client ContentfulAssetClient) (diags diag.Diagnostics) {
 	spaceID := d.Get("space_id").(string)
 	assetID := d.Id()
 
-	asset, err := client.Assets.Get(spaceID, assetID)
+	asset, err := client.Get(ctx, spaceID, assetID)
 	if err != nil {
-		return err
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
 	}
 
-	return client.Assets.Delete(spaceID, asset)
+	err = client.Delete(ctx, spaceID, asset)
+	if err != nil {
+		diags = append(diags, contentfulErrorToDiagnostic(err)...)
+		return
+	}
+	return
 }
 
 func setAssetProperties(d *schema.ResourceData, asset *contentful.Asset) (err error) {

@@ -1,12 +1,13 @@
 package contentful
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func TestAccContentfulAsset_Basic(t *testing.T) {
@@ -53,7 +54,7 @@ func testAccCheckContentfulAssetExists(n string, asset *contentful.Asset) resour
 
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		contentfulAsset, err := client.Assets.Get(spaceID, rs.Primary.ID)
+		contentfulAsset, err := client.Assets.Get(context.Background(), spaceID, rs.Primary.ID)
 		if err != nil {
 			return err
 		}
@@ -95,7 +96,7 @@ func testAccContentfulAssetDestroy(s *terraform.State) error {
 		// sdk client
 		client := testAccProvider.Meta().(*contentful.Client)
 
-		asset, _ := client.Assets.Get(spaceID, rs.Primary.ID)
+		asset, _ := client.Assets.Get(context.Background(), spaceID, rs.Primary.ID)
 		if asset == nil {
 			return nil
 		}

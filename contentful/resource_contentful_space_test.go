@@ -1,12 +1,13 @@
 package contentful
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	contentful "github.com/regressivetech/contentful-go"
+	contentful "github.com/kitagry/contentful-go"
 )
 
 func TestAccContentfulSpace_Basic(t *testing.T) {
@@ -38,7 +39,7 @@ func testAccCheckContentfulSpaceDestroy(s *terraform.State) error {
 			continue
 		}
 
-		space, err := client.Spaces.Get(rs.Primary.ID)
+		space, err := client.Spaces.Get(context.Background(), rs.Primary.ID)
 		if err == nil {
 			return fmt.Errorf("space %s still exists after destroy", space.Sys.ID)
 		}
