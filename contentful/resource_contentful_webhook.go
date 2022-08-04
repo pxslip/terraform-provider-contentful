@@ -59,12 +59,6 @@ func resourceContentfulWebhook() *schema.Resource {
 	}
 }
 
-type ContentfulWebhookClient interface {
-	Get(context.Context, string, string) (*contentful.Webhook, error)
-	Upsert(context.Context, string, *contentful.Webhook) error
-	Delete(context.Context, string, *contentful.Webhook) error
-}
-
 func wrapWebhook(f func(ctx context.Context, d *schema.ResourceData, client ContentfulWebhookClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 		client := m.(*contentful.Client)

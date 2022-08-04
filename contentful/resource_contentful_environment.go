@@ -32,12 +32,6 @@ func resourceContentfulEnvironment() *schema.Resource {
 	}
 }
 
-type ContentfulEnvironmentClient interface {
-	Get(ctx context.Context, spaceID string, environmentID string) (*contentful.Environment, error)
-	Upsert(ctx context.Context, spaceID string, e *contentful.Environment) error
-	Delete(ctx context.Context, spaceID string, e *contentful.Environment) error
-}
-
 func wrapEnvironment(f func(ctx context.Context, d *schema.ResourceData, apiKey ContentfulEnvironmentClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 		client := m.(*contentful.Client)

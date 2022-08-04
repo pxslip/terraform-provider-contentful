@@ -72,17 +72,6 @@ func resourceContentfulEntry() *schema.Resource {
 	}
 }
 
-type ContentfulEntryClient interface {
-	Get(ctx context.Context, env *contentful.Environment, entryID string) (*contentful.Entry, error)
-	Upsert(ctx context.Context, env *contentful.Environment, contentTypeID string, e *contentful.Entry) error
-	Delete(ctx context.Context, env *contentful.Environment, entryID string) error
-
-	Publish(ctx context.Context, env *contentful.Environment, entry *contentful.Entry) error
-	Unpublish(ctx context.Context, env *contentful.Environment, entry *contentful.Entry) error
-	Archive(ctx context.Context, env *contentful.Environment, entry *contentful.Entry) error
-	Unarchive(ctx context.Context, env *contentful.Environment, entry *contentful.Entry) error
-}
-
 func wrapEntry(f func(ctx context.Context, d *schema.ResourceData, env *contentful.Environment, entryClient ContentfulEntryClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 		client := m.(*contentful.Client)

@@ -122,14 +122,6 @@ func resourceContentfulContentType() *schema.Resource {
 	}
 }
 
-type ContentfulContentTypeClient interface {
-	Get(ctx context.Context, env *contentful.Environment, contentTypeID string) (*contentful.ContentType, error)
-	Upsert(ctx context.Context, env *contentful.Environment, ct *contentful.ContentType) error
-	Activate(ctx context.Context, env *contentful.Environment, ct *contentful.ContentType) error
-	Deactivate(ctx context.Context, env *contentful.Environment, ct *contentful.ContentType) error
-	Delete(ctx context.Context, env *contentful.Environment, ct *contentful.ContentType) error
-}
-
 func wrapContentType(f func(ctx context.Context, d *schema.ResourceData, env *contentful.Environment, apiKey ContentfulContentTypeClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 		client := m.(*contentful.Client)
@@ -166,50 +158,7 @@ func resourceContentTypeCreate(ctx context.Context, d *schema.ResourceData, env 
 		ct.Description = description.(string)
 	}
 
-	rawField := d.Get("field").([]interface{})
-	for i := 0; i < len(rawField); i++ {
-		field := rawField[i].(map[string]interface{})
-
-		contentfulField := &contentful.Field{
-			ID:        field["id"].(string),
-			Name:      field["name"].(string),
-			Type:      field["type"].(string),
-			Localized: field["localized"].(bool),
-			Required:  field["required"].(bool),
-			Disabled:  field["disabled"].(bool),
-			Omitted:   field["omitted"].(bool),
-		}
-
-		if linkType, ok := field["link_type"].(string); ok {
-			contentfulField.LinkType = linkType
-		}
-
-		if validations, ok := field["validations"].([]interface{}); ok {
-			parsedValidations, err := contentful.ParseValidations(validations)
-			if err != nil {
-				diags = append(diags, diag.Diagnostic{
-					Severity: diag.Error,
-					Summary:  "validation format is invalid.",
-					Detail:   err.Error(),
-					AttributePath: cty.Path{
-						cty.GetAttrStep{Name: "field"},
-						cty.IndexStep{Key: cty.NumberIntVal(int64(i))},
-						cty.GetAttrStep{Name: "validations"},
-					},
-				})
-				continue
-			}
-
-			contentfulField.Validations = parsedValidations
-		}
-
-		if items := processItems(field["items"].([]interface{})); items != nil {
-			contentfulField.Items = items
-		}
-
-		ct.Fields = append(ct.Fields, contentfulField)
-	}
-
+	ct.Fields, diags = newFields(d.Get("field").([]interface{}))
 	if diags.HasError() {
 		return
 	}
@@ -281,7 +230,10 @@ func resourceContentTypeUpdate(ctx context.Context, d *schema.ResourceData, env 
 		}
 	}
 
-	ct.Fields = newFields(d.Get("field").([]interface{}))
+	ct.Fields, diags = newFields(d.Get("field").([]interface{}))
+	if diags.HasError() {
+		return
+	}
 	if err = upsertAndActivate(ctx, client, env, ct); err != nil {
 		diags = append(diags, contentfulErrorToDiagnostic(err)...)
 		return
@@ -370,7 +322,7 @@ func checkFieldsToOmit(oldFields, newFields []interface{}) (firstApplyFields, se
 			}
 		}
 
-		field := newField(oldFieldMap)
+		field, _ := newField(oldFieldMap, i)
 		if toOmitted {
 			field.Omitted = true
 		}
@@ -385,16 +337,21 @@ func checkFieldsToOmit(oldFields, newFields []interface{}) (firstApplyFields, se
 	return
 }
 
-func newFields(newFields []interface{}) []*contentful.Field {
+func newFields(newFields []interface{}) ([]*contentful.Field, diag.Diagnostics) {
 	result := make([]*contentful.Field, len(newFields))
+	diags := make(diag.Diagnostics, 0)
 	for i := 0; i < len(newFields); i++ {
 		newFieldMap := newFields[i].(map[string]interface{})
-		result[i] = newField(newFieldMap)
+		var diag diag.Diagnostics
+		result[i], diag = newField(newFieldMap, i)
+		if diag.HasError() {
+			diags = append(diags, diag...)
+		}
 	}
-	return result
+	return result, diags
 }
 
-func newField(newField map[string]interface{}) *contentful.Field {
+func newField(newField map[string]interface{}, i int) (*contentful.Field, diag.Diagnostics) {
 	contentfulField := &contentful.Field{
 		ID:        newField["id"].(string),
 		Name:      newField["name"].(string),
@@ -410,7 +367,21 @@ func newField(newField map[string]interface{}) *contentful.Field {
 	}
 
 	if validations, ok := newField["validations"].([]interface{}); ok {
-		parsedValidations, _ := contentful.ParseValidations(validations)
+		parsedValidations, err := contentful.ParseValidations(validations)
+		if err != nil {
+			return nil, diag.Diagnostics{
+				{
+					Severity: diag.Error,
+					Summary:  "validation format is invalid.",
+					Detail:   err.Error(),
+					AttributePath: cty.Path{
+						cty.GetAttrStep{Name: "field"},
+						cty.IndexStep{Key: cty.NumberIntVal(int64(i))},
+						cty.GetAttrStep{Name: "validations"},
+					},
+				},
+			}
+		}
 
 		contentfulField.Validations = parsedValidations
 	}
@@ -418,7 +389,7 @@ func newField(newField map[string]interface{}) *contentful.Field {
 	if items := processItems(newField["items"].([]interface{})); items != nil {
 		contentfulField.Items = items
 	}
-	return contentfulField
+	return contentfulField, nil
 }
 
 func processItems(fieldItems []interface{}) *contentful.FieldTypeArrayItem {
