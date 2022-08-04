@@ -56,12 +56,6 @@ func resourceContentfulLocale() *schema.Resource {
 	}
 }
 
-type ContentfulLocaleClient interface {
-	Get(context.Context, string, string) (*contentful.Locale, error)
-	Upsert(context.Context, string, *contentful.Locale) error
-	Delete(context.Context, string, *contentful.Locale) error
-}
-
 func wrapLocale(f func(ctx context.Context, d *schema.ResourceData, client ContentfulLocaleClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 		client := m.(*contentful.Client)

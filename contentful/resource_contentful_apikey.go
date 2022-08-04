@@ -40,12 +40,6 @@ func resourceContentfulAPIKey() *schema.Resource {
 	}
 }
 
-type ContentfulAPIKeyClient interface {
-	Get(context.Context, string, string) (*contentful.APIKey, error)
-	Upsert(context.Context, string, *contentful.APIKey) error
-	Delete(context.Context, string, *contentful.APIKey) error
-}
-
 func wrapApiKey(f func(ctx context.Context, d *schema.ResourceData, apiKey ContentfulAPIKeyClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 		client := m.(*contentful.Client)

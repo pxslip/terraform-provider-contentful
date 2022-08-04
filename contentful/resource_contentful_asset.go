@@ -136,17 +136,6 @@ func resourceContentfulAsset() *schema.Resource {
 	}
 }
 
-type ContentfulAssetClient interface {
-	Get(ctx context.Context, spaceID string, assetID string) (*contentful.Asset, error)
-	Upsert(ctx context.Context, spaceID string, asset *contentful.Asset) error
-	Process(ctx context.Context, spaceID string, asset *contentful.Asset) error
-	Delete(ctx context.Context, spaceID string, asset *contentful.Asset) error
-	Publish(ctx context.Context, spaceID string, asset *contentful.Asset) error
-	Unpublish(ctx context.Context, spaceID string, asset *contentful.Asset) error
-	Archive(ctx context.Context, spaceID string, asset *contentful.Asset) error
-	Unarchive(ctx context.Context, spaceID string, asset *contentful.Asset) error
-}
-
 func wrapAsset(f func(ctx context.Context, d *schema.ResourceData, client ContentfulAssetClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 		client := m.(*contentful.Client)

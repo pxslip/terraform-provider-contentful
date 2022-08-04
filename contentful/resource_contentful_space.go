@@ -34,12 +34,6 @@ func resourceContentfulSpace() *schema.Resource {
 	}
 }
 
-type ContentfulSpaceClient interface {
-	Get(context.Context, string) (*contentful.Space, error)
-	Upsert(context.Context, *contentful.Space) error
-	Delete(context.Context, *contentful.Space) error
-}
-
 func wrapSpace(f func(ctx context.Context, d *schema.ResourceData, client ContentfulSpaceClient) diag.Diagnostics) func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	return func(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 		client := m.(*contentful.Client)
