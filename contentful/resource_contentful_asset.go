@@ -218,6 +218,11 @@ func resourceUpdateAsset(d *schema.ResourceData, m interface{}) (err error) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	assetID := d.Id()
+	defer func() {
+		if err != nil {
+			d.Partial(true)
+		}
+	}()
 
 	asset, err := client.Assets.Get(spaceID, assetID)
 	if err != nil {

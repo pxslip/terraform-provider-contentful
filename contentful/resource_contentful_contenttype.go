@@ -1,18 +1,21 @@
 package contentful
 
 import (
-	"errors"
+	"context"
+	"fmt"
 
+	"github.com/hashicorp/go-cty/cty"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	contentful "github.com/regressivetech/contentful-go"
 )
 
 func resourceContentfulContentType() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceContentTypeCreate,
-		Read:   resourceContentTypeRead,
-		Update: resourceContentTypeUpdate,
-		Delete: resourceContentTypeDelete,
+		CreateContext: resourceContentTypeCreate,
+		ReadContext:   resourceContentTypeRead,
+		UpdateContext: resourceContentTypeUpdate,
+		DeleteContext: resourceContentTypeDelete,
 
 		Schema: map[string]*schema.Schema{
 			"space_id": {
@@ -120,7 +123,7 @@ func resourceContentfulContentType() *schema.Resource {
 	}
 }
 
-func resourceContentTypeCreate(d *schema.ResourceData, m interface{}) (err error) {
+func resourceContentTypeCreate(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	envID := d.Get("env_id").(string)
@@ -144,11 +147,11 @@ func resourceContentTypeCreate(d *schema.ResourceData, m interface{}) (err error
 
 	env, err := client.Environments.Get(spaceID, envID)
 	if err != nil {
-		return err
-	}
-
-	if env == nil {
-		return errors.New("Unable to get environment " + envID)
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  err.Error(),
+		})
+		return
 	}
 
 	if description, ok := d.GetOk("description"); ok {
@@ -176,7 +179,17 @@ func resourceContentTypeCreate(d *schema.ResourceData, m interface{}) (err error
 		if validations, ok := field["validations"].([]interface{}); ok {
 			parsedValidations, err := contentful.ParseValidations(validations)
 			if err != nil {
-				return err
+				diags = append(diags, diag.Diagnostic{
+					Severity: diag.Error,
+					Summary:  "validation format is invalid.",
+					Detail:   err.Error(),
+					AttributePath: cty.Path{
+						cty.GetAttrStep{Name: "field"},
+						cty.IndexStep{Key: cty.NumberIntVal(int64(i))},
+						cty.GetAttrStep{Name: "validations"},
+					},
+				})
+				continue
 			}
 
 			contentfulField.Validations = parsedValidations
@@ -189,12 +202,26 @@ func resourceContentTypeCreate(d *schema.ResourceData, m interface{}) (err error
 		ct.Fields = append(ct.Fields, contentfulField)
 	}
 
+	if diags.HasError() {
+		return
+	}
+
 	if err = upsertAndActivate(client, env, ct); err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Failed to upsert and active content_type.",
+			Detail:   err.Error(),
+		})
+		return
 	}
 
 	if err = setContentTypeProperties(d, ct); err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Failed to setContentTypeProperties.",
+			Detail:   err.Error(),
+		})
+		return
 	}
 
 	d.SetId(ct.Sys.ID)
@@ -202,31 +229,59 @@ func resourceContentTypeCreate(d *schema.ResourceData, m interface{}) (err error
 	return nil
 }
 
-func resourceContentTypeRead(d *schema.ResourceData, m interface{}) (err error) {
+func resourceContentTypeRead(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	envID := d.Get("env_id").(string)
 	env, err := client.Environments.Get(spaceID, envID)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  fmt.Sprintf("failed to get environment %s", envID),
+			Detail:   err.Error(),
+		})
+		return
 	}
 	_, err = client.ContentTypes.Get(env, d.Id())
-	return err
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  fmt.Sprintf("failed to get contenttype %s", d.Id()),
+			Detail:   err.Error(),
+		})
+		return
+	}
+	return
 }
 
-func resourceContentTypeUpdate(d *schema.ResourceData, m interface{}) (err error) {
+func resourceContentTypeUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	envID := d.Get("env_id").(string)
+	defer func() {
+		if diags.HasError() {
+			d.Partial(true)
+		}
+	}()
 
 	env, err := client.Environments.Get(spaceID, envID)
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "failed to get environment.",
+			Detail:   err.Error(),
+		})
+		return
 	}
 
 	ct, err := client.ContentTypes.Get(env, d.Id())
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  fmt.Sprintf("failed to get ContentType(id=%s).", d.Id()),
+			Detail:   err.Error(),
+		})
+		return
 	}
 
 	ct.Name = d.Get("name").(string)
@@ -246,23 +301,47 @@ func resourceContentTypeUpdate(d *schema.ResourceData, m interface{}) (err error
 		// Omit the removed fields and publish the new version of the content type,
 		// followed by the field removal and final publish.
 		if err = upsertAndActivate(client, env, ct); err != nil {
-			return err
+			diags = append(diags, diag.Diagnostic{
+				Severity: diag.Error,
+				Summary:  "Failed to upsert and active content_type.",
+				Detail:   err.Error(),
+			})
+			return
 		}
 
 		if shouldSecondApply {
 			ct.Fields = secondApplyFields
 			if err = upsertAndActivate(client, env, ct); err != nil {
-				return err
+				diags = append(diags, diag.Diagnostic{
+					Severity: diag.Error,
+					Summary:  "Failed to upsert and active content_type.",
+					Detail:   err.Error(),
+				})
+				return
 			}
 		}
 	}
 
 	ct.Fields = newFields(d.Get("field").([]interface{}))
 	if err = upsertAndActivate(client, env, ct); err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Failed to upsert and active content_type.",
+			Detail:   err.Error(),
+		})
+		return
 	}
 
-	return setContentTypeProperties(d, ct)
+	err = setContentTypeProperties(d, ct)
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Failed to set content_type properties",
+			Detail:   err.Error(),
+		})
+		return
+	}
+	return
 }
 
 func upsertAndActivate(client *contentful.Client, env *contentful.Environment, ct *contentful.ContentType) error {
@@ -276,27 +355,50 @@ func upsertAndActivate(client *contentful.Client, env *contentful.Environment, c
 	return nil
 }
 
-func resourceContentTypeDelete(d *schema.ResourceData, m interface{}) (err error) {
+func resourceContentTypeDelete(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	envID := d.Get("env_id").(string)
 
 	env, err := client.Environments.Get(spaceID, envID)
+	if err != nil {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  fmt.Sprintf("failed to get env %s", envID),
+			Detail:   err.Error(),
+		})
+		return
+	}
 
 	ct, err := client.ContentTypes.Get(env, d.Id())
 	if err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  fmt.Sprintf("failed to get ContentType %s", d.Id()),
+			Detail:   err.Error(),
+		})
+		return
 	}
 
 	if err = client.ContentTypes.Deactivate(env, ct); err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  fmt.Sprintf("failed to deactivate ContentType %s", d.Id()),
+			Detail:   err.Error(),
+		})
+		return
 	}
 
 	if err = client.ContentTypes.Delete(env, ct); err != nil {
-		return err
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  fmt.Sprintf("failed to delete ContentType %s", d.Id()),
+			Detail:   err.Error(),
+		})
+		return
 	}
 
-	return nil
+	return
 }
 
 func setContentTypeProperties(d *schema.ResourceData, ct *contentful.ContentType) (err error) {

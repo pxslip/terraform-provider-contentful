@@ -118,6 +118,11 @@ func resourceUpdateEntry(d *schema.ResourceData, m interface{}) (err error) {
 	spaceID := d.Get("space_id").(string)
 	entryID := d.Id()
 	envID := d.Get("env_id").(string)
+	defer func() {
+		if err != nil {
+			d.Partial(true)
+		}
+	}()
 
 	// lookup the environment
 	env, err := client.Environments.Get(spaceID, envID)
@@ -167,7 +172,6 @@ func setEntryState(d *schema.ResourceData, m interface{}) (err error) {
 	envID := d.Get("env_id").(string)
 
 	env, err := client.Environments.Get(spaceID, envID)
-
 	if err != nil {
 		return err
 	}

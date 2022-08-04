@@ -54,6 +54,11 @@ func resourceUpdateEnvironment(d *schema.ResourceData, m interface{}) (err error
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	environmentID := d.Id()
+	defer func() {
+		if err != nil {
+			d.Partial(true)
+		}
+	}()
 
 	environment, err := client.Environments.Get(spaceID, environmentID)
 	if err != nil {
