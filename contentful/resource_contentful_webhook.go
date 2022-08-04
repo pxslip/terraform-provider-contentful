@@ -88,6 +88,11 @@ func resourceUpdateWebhook(d *schema.ResourceData, m interface{}) (err error) {
 	client := m.(*contentful.Client)
 	spaceID := d.Get("space_id").(string)
 	webhookID := d.Id()
+	defer func() {
+		if err != nil {
+			d.Partial(true)
+		}
+	}()
 
 	webhook, err := client.Webhooks.Get(spaceID, webhookID)
 	if err != nil {

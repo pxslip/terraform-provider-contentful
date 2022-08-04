@@ -70,6 +70,11 @@ func resourceSpaceRead(d *schema.ResourceData, m interface{}) error {
 func resourceSpaceUpdate(d *schema.ResourceData, m interface{}) (err error) {
 	client := m.(*contentful.Client)
 	spaceID := d.Id()
+	defer func() {
+		if err != nil {
+			d.Partial(true)
+		}
+	}()
 
 	space, err := client.Spaces.Get(spaceID)
 	if err != nil {
