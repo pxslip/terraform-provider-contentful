@@ -74,6 +74,13 @@ func TestAccContentfulContentType_TypeChanged(t *testing.T) {
 					testAccCheckContentfulContentTypeExists("contentful_contenttype.mycontenttype", &contentType),
 				),
 			},
+			{
+				Config: testAccContentfulContentTypeUpdateRequired,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("contentful_contenttype.mycontenttype", "name", "tf_test1"),
+					testAccCheckContentfulContentTypeExists("contentful_contenttype.mycontenttype", &contentType),
+				),
+			},
 		},
 	})
 }
@@ -334,6 +341,42 @@ resource "contentful_contenttype" "mycontenttype" {
 		omitted   = false
 		required  = false
 		type      = "Integer" // This field is changed
+
+		validations = [
+			jsonencode({
+				range = {
+					min = 1
+				}
+			})
+		]
+	}
+}
+`
+
+var testAccContentfulContentTypeUpdateRequired = `
+resource "contentful_contenttype" "mycontenttype" {
+	space_id = "` + spaceID + `"
+	env_id = "` + envID + `"
+	name = "tf_test1"
+	description = "Terraform Acc Test Content Type"
+	display_field = "field1"
+	field {
+		disabled  = false
+		id        = "field1"
+		localized = false
+		name      = "Field 1"
+		omitted   = false
+		required  = true
+		type      = "Text"
+	}
+	field {
+		disabled  = false
+		id        = "field2"
+		localized = false
+		name      = "Field 2"
+		omitted   = false
+		required  = true  // This field is changed
+		type      = "Integer"
 
 		validations = [
 			jsonencode({
