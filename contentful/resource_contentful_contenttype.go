@@ -312,6 +312,9 @@ func checkFieldsToOmit(oldFields, newFields []interface{}) (firstApplyFields, se
 			if oldFieldMap["type"].(string) != newFieldMap["type"].(string) {
 				toOmitted = true
 			}
+			if oldFieldMap["required"].(bool) != newFieldMap["required"].(bool) {
+				toOmitted = true
+			}
 		}
 
 		shouldDelete := false
