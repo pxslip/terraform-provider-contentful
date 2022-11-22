@@ -21,6 +21,14 @@ Create, update and delete Contentful resources such as:
 - [x] Environments
 - [x] Entries
 - [x] Assets
+- [] [Organization Membership](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/organization-memberships)/[Invitations](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/invitations)
+- [] [Teams](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/teams)
+- [] [Team Memberships](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/team-memberships)
+- [] [Space Membership](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/space-memberships)
+- [] [Team Space Membership](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/team-space-memberships)
+- [] [Space Members](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/space-members)
+- [] [Space Roles](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/space-roles)
+- [] [Users](https://www.contentful.com/developers/docs/references/user-management-api/#/reference/users)
 
 # Getting started
 
